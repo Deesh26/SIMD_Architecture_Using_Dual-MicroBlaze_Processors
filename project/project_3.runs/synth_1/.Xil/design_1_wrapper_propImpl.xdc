@@ -1,0 +1,5 @@
+set_property SRC_FILE_INFO {cfile:H:/simd_final_test/simd_final/project_3/project_3.srcs/constrs_2/new/cons2.xdc rfile:../../../project_3.srcs/constrs_2/new/cons2.xdc id:1} [current_design]
+set_property src_info {type:XDC file:1 line:3 export:INPUT save:INPUT read:READ} [current_design]
+set_property PACKAGE_PIN D4 [get_ports usb_uart_rxd]
+set_property src_info {type:XDC file:1 line:4 export:INPUT save:INPUT read:READ} [current_design]
+set_property PACKAGE_PIN C4 [get_ports usb_uart_txd]

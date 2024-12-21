@@ -1,0 +1,164 @@
+/******************************************************************************
+*
+* Copyright (C) 2009 - 2014 Xilinx, Inc.  All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to deal
+* in the Software without restriction, including without limitation the rights
+* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* Use of the Software is limited solely to applications:
+* (a) running on a Xilinx device, or
+* (b) that interact with a Xilinx device through a bus or interconnect.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+* XILINX  BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+* OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+* SOFTWARE.
+*
+* Except as contained in this notice, the name of the Xilinx shall not be used
+* in advertising or otherwise to promote the sale, use or other dealings in
+* this Software without prior written authorization from Xilinx.
+*
+******************************************************************************/
+
+/*
+ * helloworld.c: simple test application
+ *
+ * This application configures UART 16550 to baud rate 9600.
+ * PS7 UART (Zynq) is not initialized by this application, since
+ * bootrom/bsp configures it to baud rate 115200
+ *
+ * ------------------------------------------------
+ * | UART TYPE   BAUD RATE                        |
+ * ------------------------------------------------
+ *   uartns550   9600
+ *   uartlite    Configurable only in HW design
+ *   ps7_uart    115200 (configured by bootrom/bsp)
+ */
+
+#include "xuartlite.h"
+#include "xil_printf.h"
+#include "xparameters.h"
+#include <string.h>
+#include "xtmrctr.h"
+#include <stdio.h>
+
+#define BRAM_BASE 0xC0000000
+#define INPUT_ARRAY_ADDR BRAM_BASE
+#define OUTPUT_ARRAY_ADDR (BRAM_BASE + 0x10)
+#define FLAG_START (BRAM_BASE + 0x20)
+#define FLAG_DONE (BRAM_BASE + 0x24)
+#define DATA_SIZE 4
+#define HALF_SIZE (DATA_SIZE / 2)
+
+XUartLite UartLite;
+XTmrCtr TimerCounter;
+
+int inputArray[DATA_SIZE] = {10, 20, 30, 40};
+int outputArray[DATA_SIZE];
+
+XUartLite UartLite;
+int Status;
+// Function prototypes
+int initialize_uart(XUartLite *UartLitePtr);
+int initialize_timer(XTmrCtr *TmrCtrInstancePtr);
+void print_message(const char *str);
+void write_to_bram(int *data, u32 base, int size);
+void read_from_bram(int *data, u32 base, int size);
+void print_message(const char *str);
+
+
+int main() {
+
+	 Status = XUartLite_Initialize(&UartLite, XPAR_UARTLITE_0_DEVICE_ID);
+	    if (Status != XST_SUCCESS) {
+	        xil_printf("UART initialization failed.\n");
+	        return -1;
+	    }
+
+	    // Initialize Timer
+	    Status = XTmrCtr_Initialize(&TimerCounter, XPAR_TMRCTR_0_DEVICE_ID);
+	    if (Status != XST_SUCCESS) {
+	        xil_printf("Timer initialization failed.\n");
+	        return -1;
+	    }
+
+    // Write inputArray to shared BRAM
+    write_to_bram(inputArray, INPUT_ARRAY_ADDR, DATA_SIZE);
+
+    // Start the timer
+    XTmrCtr_Start(&TimerCounter, 0);
+
+    // Process the first half of the array
+    for (int i = 0; i < HALF_SIZE; i++) {
+        outputArray[i] = inputArray[i] + 10; // Example operation: addition
+    }
+
+    // Write the first half of the results to BRAM
+    write_to_bram(outputArray, OUTPUT_ARRAY_ADDR, HALF_SIZE);
+
+    // Signal MicroBlaze 2 to start processing
+    Xil_Out32(FLAG_START, 1);
+
+    // Wait for MicroBlaze 2 to finish
+    while (Xil_In32(FLAG_DONE) != 1);
+
+    // Read the second half of the results from BRAM
+    read_from_bram(outputArray + HALF_SIZE, OUTPUT_ARRAY_ADDR + (HALF_SIZE * sizeof(int)), HALF_SIZE);
+
+    // Stop the timer
+    XTmrCtr_Stop(&TimerCounter, 0);
+
+    // Display the results
+    char buf[100];
+    snprintf(buf, sizeof(buf), "Input Array: ");
+    print_message(buf);
+    for (int i = 0; i < DATA_SIZE; i++) {
+        snprintf(buf, sizeof(buf), "%d ", inputArray[i]);
+        print_message(buf);
+    }
+    print_message("\n");
+
+    snprintf(buf, sizeof(buf), "Output Array: ");
+    print_message(buf);
+    for (int i = 0; i < DATA_SIZE; i++) {
+        snprintf(buf, sizeof(buf), "%d ", outputArray[i]);
+        print_message(buf);
+    }
+    print_message("\n");
+
+    // Display processing time
+    u32 timeTaken = XTmrCtr_GetValue(&TimerCounter, 0);
+    snprintf(buf, sizeof(buf), "Time Taken: %lu ticks\n", timeTaken);
+    print_message(buf);
+
+    return 0;
+}
+
+void write_to_bram(int *data, u32 base, int size) {
+    for (int i = 0; i < size; i++) {
+        Xil_Out32(base + (i * sizeof(int)), data[i]);
+    }
+}
+
+void read_from_bram(int *data, u32 base, int size) {
+    for (int i = 0; i < size; i++) {
+        data[i] = Xil_In32(base + (i * sizeof(int)));
+    }
+}
+
+void print_message(const char *str) {
+    XUartLite_Send(&UartLite, (u8 *)str, strlen(str));
+    while (XUartLite_IsSending(&UartLite));
+    return;
+}
+
